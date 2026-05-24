@@ -55,37 +55,52 @@ export class Puzzle {
     this.viewW = w;
     this.viewH = h;
 
-    // ピースサイズをキャンバスに合わせて再計算
     const margin = 0.85;
     this.pieceW = Math.floor((w * margin) / this.cols);
     this.pieceH = Math.floor((h * margin) / this.rows);
 
-    // 完成位置（右下エリア）を更新
     const gridW = this.pieceW * this.cols;
     const gridH = this.pieceH * this.rows;
     this.gridOffsetX = Math.floor((w - gridW) / 2);
     this.gridOffsetY = Math.floor((h - gridH) / 2);
 
-    if (this.pieces.length > 0) this._render();
+    // リサイズ時に配置済みピースの座標を正しい位置に更新
+    if (this.pieces.length > 0) {
+      for (const p of this.pieces) {
+        if (p.placed) {
+          p.x = this._correctX(p);
+          p.y = this._correctY(p);
+        }
+      }
+      this._render();
+    }
   }
 
   _initPieces(saved) {
     if (saved) {
-      this.pieces = saved;
+      // 復元時: 配置済みは正しい座標に、未配置は現在の画面内にクランプ
+      this.pieces = saved.map(p => {
+        const piece = { ...p };
+        if (piece.placed) {
+          piece.x = this._correctX(piece);
+          piece.y = this._correctY(piece);
+        } else {
+          piece.x = Math.max(0, Math.min(piece.x, this.viewW - this.pieceW));
+          piece.y = Math.max(0, Math.min(piece.y, this.viewH - this.pieceH));
+        }
+        return piece;
+      });
       return;
     }
     const pieces = [];
     const { cols, rows, pieceW, pieceH, viewW, viewH } = this;
-
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
-        // ランダムな初期位置
         const x = Math.random() * (viewW - pieceW);
         const y = Math.random() * (viewH - pieceH);
         pieces.push({ c, r, x, y, placed: false });
       }
     }
-    // シャッフル後に画面内に収める
     this.pieces = pieces;
   }
 
@@ -205,6 +220,8 @@ export class Puzzle {
 
     this._render();
     this._scheduleSave();
+    // ピース移動直後に進捗を即時反映
+    if (this.onUpdate) this.onUpdate(this.elapsed);
     this._checkComplete();
   }
 
