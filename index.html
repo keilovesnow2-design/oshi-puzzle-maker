@@ -29,7 +29,6 @@
   <div class="app-title">推しパズルメーカー</div>
   <p class="app-sub">画像をジグソーパズルにしよう</p>
 
-  <!-- 画像アップロード -->
   <div class="card">
     <div class="card-title">画像を選ぶ</div>
     <div class="upload-area" id="uploadArea">
@@ -43,33 +42,26 @@
     </div>
   </div>
 
-  <!-- 難易度選択 -->
   <div class="card">
     <div class="card-title">難易度（ピース数）</div>
     <div class="difficulty-grid">
       <button class="diff-btn" data-cols="3" data-rows="3">
-        <span class="pieces">9</span>
-        <span class="label">かんたん</span>
+        <span class="pieces">9</span><span class="label">かんたん</span>
       </button>
       <button class="diff-btn selected" data-cols="4" data-rows="4">
-        <span class="pieces">16</span>
-        <span class="label">ふつう</span>
+        <span class="pieces">16</span><span class="label">ふつう</span>
       </button>
       <button class="diff-btn" data-cols="5" data-rows="5">
-        <span class="pieces">25</span>
-        <span class="label">むずかしい</span>
+        <span class="pieces">25</span><span class="label">むずかしい</span>
       </button>
       <button class="diff-btn" data-cols="6" data-rows="6">
-        <span class="pieces">36</span>
-        <span class="label">ハード</span>
+        <span class="pieces">36</span><span class="label">ハード</span>
       </button>
       <button class="diff-btn" data-cols="8" data-rows="8">
-        <span class="pieces">64</span>
-        <span class="label">エキスパート</span>
+        <span class="pieces">64</span><span class="label">エキスパート</span>
       </button>
       <button class="diff-btn" data-cols="10" data-rows="10">
-        <span class="pieces">100</span>
-        <span class="label">超ハード</span>
+        <span class="pieces">100</span><span class="label">超ハード</span>
       </button>
     </div>
   </div>
@@ -92,6 +84,13 @@
   <div id="canvasContainer">
     <canvas id="puzzleCanvas"></canvas>
   </div>
+  <!-- 見本ボタン -->
+  <button id="refBtn" class="ref-btn" aria-label="完成見本を表示">見本</button>
+  <!-- 見本オーバーレイ（ブラウザ内画像のみ・サーバー非送信） -->
+  <div id="refOverlay" class="ref-overlay hidden">
+    <div class="ref-header">完成見本</div>
+    <img id="refImg" alt="完成見本">
+  </div>
 </div>
 
 <!-- ===== クリア画面 ===== -->
@@ -104,52 +103,68 @@
 </div>
 
 <script type="module">
-import { initDB, saveState, loadState, clearState, hasSavedState } from './storage.js';
+import { initDB, loadState, clearState, hasSavedState } from './storage.js';
 import { Puzzle, formatTime } from './puzzle.js';
 
-// ===== 状態 =====
+// ── 状態 ──
 let selectedCols = 4, selectedRows = 4;
 let imageBlob = null;
-let imageEl = null;
 let puzzle = null;
+let refObjectURL = null; // createObjectURL の管理
 
-// ===== 要素取得 =====
+// ── 要素 ──
 const screens = {
   resume:   document.getElementById('resumeDialog'),
   start:    document.getElementById('startScreen'),
   puzzle:   document.getElementById('puzzleScreen'),
   complete: document.getElementById('completeScreen'),
 };
-const fileInput     = document.getElementById('fileInput');
-const previewImg    = document.getElementById('previewImg');
+const fileInput         = document.getElementById('fileInput');
+const previewImg        = document.getElementById('previewImg');
 const uploadPlaceholder = document.getElementById('uploadPlaceholder');
-const startBtn      = document.getElementById('startBtn');
-const timerDisplay  = document.getElementById('timerDisplay');
-const progressText  = document.getElementById('progressText');
-const progressFill  = document.getElementById('progressFill');
-const resumeBtn     = document.getElementById('resumeBtn');
-const newGameBtn    = document.getElementById('newGameBtn');
-const resumeSub     = document.getElementById('resumeSub');
-const resetBtn      = document.getElementById('resetBtn');
-const playAgainBtn  = document.getElementById('playAgainBtn');
-const canvas        = document.getElementById('puzzleCanvas');
+const startBtn          = document.getElementById('startBtn');
+const timerDisplay      = document.getElementById('timerDisplay');
+const progressText      = document.getElementById('progressText');
+const progressFill      = document.getElementById('progressFill');
+const resumeBtn         = document.getElementById('resumeBtn');
+const newGameBtn        = document.getElementById('newGameBtn');
+const resumeSub         = document.getElementById('resumeSub');
+const resetBtn          = document.getElementById('resetBtn');
+const playAgainBtn      = document.getElementById('playAgainBtn');
+const canvas            = document.getElementById('puzzleCanvas');
+const refBtn            = document.getElementById('refBtn');
+const refOverlay        = document.getElementById('refOverlay');
+const refImg            = document.getElementById('refImg');
 
 function showScreen(name) {
   Object.values(screens).forEach(s => s.classList.add('hidden'));
   screens[name].classList.remove('hidden');
+  // パズル以外の画面では見本を隠す
+  if (name !== 'puzzle') {
+    refOverlay.classList.add('hidden');
+    refBtn.classList.add('hidden');
+  } else {
+    refBtn.classList.remove('hidden');
+  }
 }
 
-// ===== 起動処理 =====
+function updateProgress(total) {
+  if (!puzzle) return;
+  const placed = puzzle.countPlaced();
+  progressText.textContent = `${placed} / ${total}`;
+  progressFill.style.width = `${(placed / total) * 100}%`;
+}
+
+// ── 起動 ──
 async function boot() {
   await initDB();
   if (hasSavedState()) {
     const state = await loadState();
     if (state) {
-      const mins = Math.floor(state.elapsed / 60);
-      const secs = state.elapsed % 60;
       const placed = state.pieces.filter(p => p.placed).length;
-      const total = state.pieces.length;
-      resumeSub.textContent = `${state.cols * state.rows}ピース・${placed}/${total}個配置済み・${mins}分${secs}秒経過`;
+      const total  = state.pieces.length;
+      const m = Math.floor(state.elapsed / 60), s = state.elapsed % 60;
+      resumeSub.textContent = `${total}ピース・${placed}/${total}個配置済み・${m}分${s}秒経過`;
       showScreen('resume');
       return;
     }
@@ -157,7 +172,7 @@ async function boot() {
   showScreen('start');
 }
 
-// ===== 再開 =====
+// ── 再開 ──
 resumeBtn.addEventListener('click', async () => {
   const state = await loadState();
   if (!state) { showScreen('start'); return; }
@@ -171,37 +186,33 @@ newGameBtn.addEventListener('click', async () => {
   showScreen('start');
 });
 
-// ===== 画像選択 =====
-fileInput.addEventListener('change', (e) => {
+// ── 画像選択 ──
+fileInput.addEventListener('change', e => {
   const file = e.target.files[0];
   if (!file) return;
+  setImage(file);
+});
+
+const uploadArea = document.getElementById('uploadArea');
+uploadArea.addEventListener('dragover',  e => { e.preventDefault(); uploadArea.classList.add('drag-over'); });
+uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('drag-over'));
+uploadArea.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadArea.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file && file.type.startsWith('image/')) setImage(file);
+});
+
+function setImage(file) {
   imageBlob = file;
   const url = URL.createObjectURL(file);
   previewImg.src = url;
   previewImg.style.display = 'block';
   uploadPlaceholder.style.display = 'none';
   startBtn.disabled = false;
-});
+}
 
-// ドラッグ＆ドロップ（PC）
-const uploadArea = document.getElementById('uploadArea');
-uploadArea.addEventListener('dragover', (e) => { e.preventDefault(); uploadArea.classList.add('drag-over'); });
-uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('drag-over'));
-uploadArea.addEventListener('drop', (e) => {
-  e.preventDefault();
-  uploadArea.classList.remove('drag-over');
-  const file = e.dataTransfer.files[0];
-  if (file && file.type.startsWith('image/')) {
-    imageBlob = file;
-    const url = URL.createObjectURL(file);
-    previewImg.src = url;
-    previewImg.style.display = 'block';
-    uploadPlaceholder.style.display = 'none';
-    startBtn.disabled = false;
-  }
-});
-
-// ===== 難易度選択 =====
+// ── 難易度 ──
 document.querySelectorAll('.diff-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('selected'));
@@ -211,7 +222,7 @@ document.querySelectorAll('.diff-btn').forEach(btn => {
   });
 });
 
-// ===== パズル開始 =====
+// ── スタート ──
 startBtn.addEventListener('click', async () => {
   if (!imageBlob) return;
   await clearState();
@@ -230,13 +241,16 @@ function blobToImage(blob) {
 }
 
 function startPuzzle(img, cols, rows, elapsed, savedPieces) {
-  imageEl = img;
   showScreen('puzzle');
-
   if (puzzle) puzzle.destroy();
 
   const total = cols * rows;
-  let placed = savedPieces ? savedPieces.filter(p => p.placed).length : 0;
+
+  // 見本画像を設定（ブラウザ内 Blob のみ・サーバー非送信）
+  if (refObjectURL) URL.revokeObjectURL(refObjectURL);
+  refObjectURL = URL.createObjectURL(imageBlob);
+  refImg.src = refObjectURL;
+  refOverlay.classList.add('hidden');
 
   puzzle = new Puzzle({
     canvas,
@@ -245,36 +259,35 @@ function startPuzzle(img, cols, rows, elapsed, savedPieces) {
     rows,
     elapsed,
     savedPieces,
-    onComplete: (sec) => {
+    onComplete: sec => {
       showScreen('complete');
       document.getElementById('completeTime').textContent = formatTime(sec);
       document.getElementById('completeSub').textContent =
         `${cols * rows}ピースを${Math.floor(sec/60)}分${sec%60}秒でクリア！`;
     },
-    onUpdate: (sec) => {
+    onUpdate: sec => {
       timerDisplay.textContent = formatTime(sec);
-      // 進捗更新
-      placed = puzzle.pieces.filter(p => p.placed).length;
-      progressText.textContent = `${placed} / ${total}`;
-      progressFill.style.width = `${(placed / total) * 100}%`;
+      updateProgress(total);
     },
   });
 
   puzzle.setImageBlob(imageBlob);
-
-  // 初期進捗
-  progressText.textContent = `${placed} / ${total}`;
-  progressFill.style.width = `${(placed / total) * 100}%`;
+  updateProgress(total);
   timerDisplay.textContent = formatTime(elapsed);
 }
 
-// ===== リセット =====
+// ── 見本トグル ──
+refBtn.addEventListener('click', () => {
+  refOverlay.classList.toggle('hidden');
+});
+
+// ── リセット ──
 resetBtn.addEventListener('click', async () => {
   if (!confirm('パズルをリセットしますか？\n保存データも削除されます。')) return;
   if (puzzle) { puzzle.destroy(); puzzle = null; }
   await clearState();
-  // スタート画面に戻す（画像・設定はリセット）
   imageBlob = null;
+  if (refObjectURL) { URL.revokeObjectURL(refObjectURL); refObjectURL = null; }
   previewImg.style.display = 'none';
   uploadPlaceholder.style.display = '';
   startBtn.disabled = true;
@@ -282,9 +295,10 @@ resetBtn.addEventListener('click', async () => {
   showScreen('start');
 });
 
-// ===== もう一度 =====
+// ── もう一度 ──
 playAgainBtn.addEventListener('click', () => {
   imageBlob = null;
+  if (refObjectURL) { URL.revokeObjectURL(refObjectURL); refObjectURL = null; }
   previewImg.style.display = 'none';
   uploadPlaceholder.style.display = '';
   startBtn.disabled = true;

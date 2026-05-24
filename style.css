@@ -286,9 +286,62 @@ html, body {
 }
 .complete-sub { color: var(--text-sub); font-size: 0.9rem; text-align: center; }
 
+/* ===== 見本ボタン ===== */
+.ref-btn {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 20;
+  background: rgba(15,52,96,0.92);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 50px;
+  padding: 9px 16px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+  transition: opacity 0.15s, transform 0.1s;
+}
+.ref-btn:active { transform: scale(0.95); }
+.ref-btn.hidden { display: none; }
+
+/* ===== 見本オーバーレイ ===== */
+.ref-overlay {
+  position: fixed;
+  bottom: 60px;
+  right: 16px;
+  z-index: 19;
+  width: min(38vw, 170px);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.6);
+  border: 1.5px solid rgba(255,255,255,0.2);
+  background: #0d0d1a;
+}
+.ref-overlay.hidden { display: none; }
+
+.ref-header {
+  font-size: 0.65rem;
+  color: rgba(255,255,255,0.55);
+  text-align: center;
+  padding: 4px 0;
+  letter-spacing: 0.08em;
+}
+
+.ref-overlay img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
 /* ===== SAFE AREA ===== */
 @supports (padding: env(safe-area-inset-bottom)) {
   .screen { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
   .puzzle-header { padding-top: calc(10px + env(safe-area-inset-top)); }
   #canvasContainer { top: calc(52px + env(safe-area-inset-top)); }
+  .ref-btn     { bottom: calc(16px + env(safe-area-inset-bottom)); }
+  .ref-overlay { bottom: calc(60px + env(safe-area-inset-bottom)); }
 }
