@@ -13,7 +13,7 @@ const DELTAS = [[-1,0],[1,0],[0,-1],[0,1]];
 const SAVE_DEBOUNCE = 500;
 
 export class Puzzle {
-  constructor({ canvas, image, cols, rows, elapsed = 0, savedPieces = null, onComplete, onUpdate }) {
+  constructor({ canvas, image, cols, rows, elapsed = 0, savedPieces = null, savedVW = null, savedVH = null, onComplete, onUpdate }) {
     this.canvas   = canvas;
     this.ctx      = canvas.getContext('2d');
     this.image    = image;
@@ -30,9 +30,12 @@ export class Puzzle {
     this.dragOffX     = 0;
     this.dragOffY     = 0;
     this.activeTouchId = null;
-    this.timerInterval = null;
-    this.saveTimer     = null;
-    this.completed     = false;
+    this.timerInterval  = null;
+    this.saveTimer      = null;
+    this.completed      = false;
+    this._resizeTimer   = null;
+    this.savedVW        = savedVW;
+    this.savedVH        = savedVH;
 
     this._resize     = this._resize.bind(this);
     this._onTStart   = this._onTStart.bind(this);
@@ -53,7 +56,12 @@ export class Puzzle {
 
   _setupCanvas() {
     this._resize();
-    window.addEventListener('resize', this._resize);
+    this._resizeDebounced = () => {
+      clearTimeout(this._resizeTimer);
+      this._resizeTimer = setTimeout(() => this._resize(), 150);
+    };
+    window.addEventListener('resize', this._resizeDebounced);
+    window.addEventListener('orientationchange', this._resizeDebounced);
   }
 
   _resize() {
@@ -62,6 +70,10 @@ export class Puzzle {
     const w    = cont.clientWidth;
     const h    = cont.clientHeight;
     if (!w || !h) return;
+
+    // 旧サイズを保持してスケール比を計算（初回は比率1.0）
+    const oldW = this.vW || w;
+    const oldH = this.vH || h;
 
     this.canvas.width  = w * dpr;
     this.canvas.height = h * dpr;
@@ -78,13 +90,16 @@ export class Puzzle {
     this.gY = Math.floor((h - this.pH * this.rows) / 2);
 
     if (this.pieces.length > 0) {
+      const scaleX = w / oldW;
+      const scaleY = h / oldH;
       for (const p of this.pieces) {
         if (p.placed) {
           p.x = this._cx(p);
           p.y = this._cy(p);
         } else {
-          p.x = Math.max(0, Math.min(p.x, w - this.pW));
-          p.y = Math.max(0, Math.min(p.y, h - this.pH));
+          // 比率を維持して移動（グループの相対位置を保つ）
+          p.x = Math.max(0, Math.min(p.x * scaleX, w - this.pW));
+          p.y = Math.max(0, Math.min(p.y * scaleY, h - this.pH));
         }
       }
       this._render();
@@ -103,11 +118,14 @@ export class Puzzle {
         else maxId = Math.max(maxId, p.groupId);
       }
       this.nextGroupId = maxId + 1;
+      // resume時にcanvasサイズが変わっていればスケーリング（回転後の再開）
+      const scaleX = (this.savedVW && this.savedVW !== this.vW) ? this.vW / this.savedVW : 1;
+      const scaleY = (this.savedVH && this.savedVH !== this.vH) ? this.vH / this.savedVH : 1;
       for (const p of this.pieces) {
         if (p.placed) { p.x = this._cx(p); p.y = this._cy(p); }
         else {
-          p.x = Math.max(0, Math.min(p.x, this.vW - this.pW));
-          p.y = Math.max(0, Math.min(p.y, this.vH - this.pH));
+          p.x = Math.max(0, Math.min(p.x * scaleX, this.vW - this.pW));
+          p.y = Math.max(0, Math.min(p.y * scaleY, this.vH - this.pH));
         }
       }
       return;
@@ -443,7 +461,9 @@ export class Puzzle {
     c.removeEventListener('mousedown',   this._onMDown);
     window.removeEventListener('mousemove', this._onMMove);
     window.removeEventListener('mouseup',   this._onMUp);
-    window.removeEventListener('resize', this._resize);
+    window.removeEventListener('resize', this._resizeDebounced);
+    window.removeEventListener('orientationchange', this._resizeDebounced);
+    clearTimeout(this._resizeTimer);
   }
 
   // ── Timer / Save / Complete ────────────────────────────────────────────
@@ -470,6 +490,8 @@ export class Puzzle {
       cols:      this.cols,
       rows:      this.rows,
       elapsed:   this.elapsed,
+      vW:        this.vW,
+      vH:        this.vH,
     });
   }
 

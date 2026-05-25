@@ -178,7 +178,7 @@ resumeBtn.addEventListener('click', async () => {
   if (!state) { showScreen('start'); return; }
   imageBlob = state.imageBlob;
   const img = await blobToImage(imageBlob);
-  startPuzzle(img, state.cols, state.rows, state.elapsed, state.pieces);
+  startPuzzle(img, state.cols, state.rows, state.elapsed, state.pieces, state.vW, state.vH);
 });
 
 newGameBtn.addEventListener('click', async () => {
@@ -240,7 +240,7 @@ function blobToImage(blob) {
   });
 }
 
-function startPuzzle(img, cols, rows, elapsed, savedPieces) {
+function startPuzzle(img, cols, rows, elapsed, savedPieces, savedVW, savedVH) {
   showScreen('puzzle');
   if (puzzle) puzzle.destroy();
 
@@ -259,6 +259,8 @@ function startPuzzle(img, cols, rows, elapsed, savedPieces) {
     rows,
     elapsed,
     savedPieces,
+    savedVW,
+    savedVH,
     onComplete: sec => {
       showScreen('complete');
       document.getElementById('completeTime').textContent = formatTime(sec);

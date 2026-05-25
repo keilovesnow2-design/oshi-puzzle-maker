@@ -52,19 +52,19 @@ async function dbDelete(id) {
   });
 }
 
-export async function saveState({ imageBlob, pieces, cols, rows, elapsed }) {
+export async function saveState({ imageBlob, pieces, cols, rows, elapsed, vW, vH }) {
   await dbPut({ id: 'current', imageBlob, pieces });
-  localStorage.setItem(LS_KEY, JSON.stringify({ exists: true, cols, rows, elapsed, savedAt: Date.now() }));
+  localStorage.setItem(LS_KEY, JSON.stringify({ exists: true, cols, rows, elapsed, savedAt: Date.now(), vW, vH }));
 }
 
 export async function loadState() {
   const meta = localStorage.getItem(LS_KEY);
   if (!meta) return null;
-  const { exists, cols, rows, elapsed } = JSON.parse(meta);
+  const { exists, cols, rows, elapsed, vW, vH } = JSON.parse(meta);
   if (!exists) return null;
   const record = await dbGet('current');
   if (!record) return null;
-  return { imageBlob: record.imageBlob, pieces: record.pieces, cols, rows, elapsed };
+  return { imageBlob: record.imageBlob, pieces: record.pieces, cols, rows, elapsed, vW, vH };
 }
 
 export async function clearState() {
