@@ -110,7 +110,10 @@ export class Puzzle {
 
   _initPieces(saved) {
     if (saved) {
-      this.pieces = saved.map(p => ({ ...p }));
+      this.pieces = saved.map(p => ({
+        ...p,
+        edges: p.edges || { top: 0, right: 0, bottom: 0, left: 0 },
+      }));
       // 保存データにgroupIdがない古いデータへの対応
       let maxId = -1;
       for (const p of this.pieces) {
@@ -131,6 +134,7 @@ export class Puzzle {
       return;
     }
 
+    const edgeGrid = this._generateEdges();
     const pieces = [];
     let id = 0;
     for (let r = 0; r < this.rows; r++) {
@@ -138,7 +142,7 @@ export class Puzzle {
         // 画面全体にランダム配置（グリッドエリアと重なってもOK）
         const x = Math.random() * Math.max(1, this.vW - this.pW);
         const y = Math.random() * Math.max(1, this.vH - this.pH);
-        pieces.push({ c, r, x, y, groupId: id, placed: false });
+        pieces.push({ c, r, x, y, groupId: id, placed: false, edges: edgeGrid[r][c] });
         id++;
       }
     }
@@ -277,6 +281,63 @@ export class Puzzle {
     return false;
   }
 
+  // ── Jigsaw shape ───────────────────────────────────────────────────────
+
+  _generateEdges() {
+    const { cols, rows } = this;
+    // hEdge[r][c]: 下辺方向（1=タブが下方向, -1=ブランク）
+    const hEdge = Array.from({ length: rows - 1 }, () =>
+      Array.from({ length: cols },     () => (Math.random() < 0.5 ? 1 : -1))
+    );
+    // vEdge[r][c]: 右辺方向（1=タブが右方向, -1=ブランク）
+    const vEdge = Array.from({ length: rows }, () =>
+      Array.from({ length: cols - 1 }, () => (Math.random() < 0.5 ? 1 : -1))
+    );
+    return Array.from({ length: rows }, (_, r) =>
+      Array.from({ length: cols }, (_, c) => ({
+        top:    r === 0        ? 0 : -hEdge[r - 1][c],
+        bottom: r === rows - 1 ? 0 :  hEdge[r][c],
+        left:   c === 0        ? 0 : -vEdge[r][c - 1],
+        right:  c === cols - 1 ? 0 :  vEdge[r][c],
+      }))
+    );
+  }
+
+  _piecePath(p) {
+    const { pW, pH } = this;
+    const { x, y } = p;
+    const e = p.edges || { top: 0, right: 0, bottom: 0, left: 0 };
+    const path = new Path2D();
+    path.moveTo(x, y);
+    this._edgePath(path, x,    y,    x+pW, y,    e.top,    0, -1);
+    this._edgePath(path, x+pW, y,    x+pW, y+pH, e.right,  1,  0);
+    this._edgePath(path, x+pW, y+pH, x,    y+pH, e.bottom, 0,  1);
+    this._edgePath(path, x,    y+pH, x,    y,    e.left,  -1,  0);
+    path.closePath();
+    return path;
+  }
+
+  _edgePath(path, x1, y1, x2, y2, type, perpX, perpY) {
+    if (type === 0) { path.lineTo(x2, y2); return; }
+    const dx = x2 - x1, dy = y2 - y1;
+    const H  = Math.sqrt(dx*dx + dy*dy) * 0.30 * type;
+    const tx = perpX * H, ty = perpY * H;
+    const q  = (f, ox, oy) => [x1 + dx*f + ox, y1 + dy*f + oy];
+
+    path.lineTo(...q(0.30, 0, 0));
+    path.bezierCurveTo(
+      ...q(0.30, tx*0.5, ty*0.5),
+      ...q(0.40, tx,     ty    ),
+      ...q(0.50, tx,     ty    )
+    );
+    path.bezierCurveTo(
+      ...q(0.60, tx,     ty    ),
+      ...q(0.70, tx*0.5, ty*0.5),
+      ...q(0.70, 0, 0)
+    );
+    path.lineTo(x2, y2);
+  }
+
   // ── Render ─────────────────────────────────────────────────────────────
 
   _render() {
@@ -333,8 +394,9 @@ export class Puzzle {
       ctx.strokeStyle = 'rgba(100,210,255,0.85)';
       ctx.lineWidth   = 2;
       for (const p of group) {
-        ctx.fillRect  (p.x + moveX, p.y + moveY, pW, pH);
-        ctx.strokeRect(p.x + moveX, p.y + moveY, pW, pH);
+        const prev = this._piecePath({ ...p, x: p.x + moveX, y: p.y + moveY });
+        ctx.fill(prev);
+        ctx.stroke(prev);
       }
       ctx.restore();
       return;
@@ -350,8 +412,9 @@ export class Puzzle {
         ctx.strokeStyle = '#FFD700';
         ctx.lineWidth   = 2;
         for (const p of group) {
-          ctx.fillRect  (p.x + moveX, p.y + moveY, pW, pH);
-          ctx.strokeRect(p.x + moveX, p.y + moveY, pW, pH);
+          const prev = this._piecePath({ ...p, x: p.x + moveX, y: p.y + moveY });
+          ctx.fill(prev);
+          ctx.stroke(prev);
         }
         ctx.restore();
         return;
@@ -375,24 +438,41 @@ export class Puzzle {
       ctx.shadowOffsetY = 2;
     }
 
-    ctx.drawImage(
-      image,
-      (p.c / cols) * image.width,
-      (p.r / rows) * image.height,
-      image.width  / cols,
-      image.height / rows,
-      p.x, p.y, pW, pH
-    );
+    const path = this._piecePath(p);
+    ctx.clip(path);
 
     // シャドウをリセット（枠線に影が出ないように）
     ctx.shadowColor = 'transparent';
     ctx.shadowBlur  = 0;
 
+    // ジグソータブ部分まで正しく描画されるよう、セル位置に合わせて全体画像をマッピング
+    const iW = image.width, iH = image.height;
+    const cellW = iW / cols, cellH = iH / rows;
+    const EXTRA = 0.35;
+    const srcL = Math.max(0, (p.c - EXTRA) * cellW);
+    const srcT = Math.max(0, (p.r - EXTRA) * cellH);
+    const srcR = Math.min(iW, (p.c + 1 + EXTRA) * cellW);
+    const srcB = Math.min(iH, (p.r + 1 + EXTRA) * cellH);
+    const scX  = pW / cellW;
+    const scY  = pH / cellH;
+    ctx.drawImage(
+      image,
+      srcL, srcT, srcR - srcL, srcB - srcT,
+      p.x - p.c * pW + srcL * scX,
+      p.y - p.r * pH + srcT * scY,
+      (srcR - srcL) * scX,
+      (srcB - srcT) * scY
+    );
+
+    ctx.restore();
+
+    // 輪郭線（clip外で描画してエッジが消えないように）
+    ctx.save();
     ctx.strokeStyle = isDragging  ? '#FFD700'
                     : p.placed    ? 'rgba(255,255,255,0.18)'
                     :               'rgba(255,255,255,0.5)';
     ctx.lineWidth   = isDragging ? 2 : p.placed ? 0.5 : 1;
-    ctx.strokeRect(p.x, p.y, pW, pH);
+    ctx.stroke(path);
     ctx.restore();
   }
 
