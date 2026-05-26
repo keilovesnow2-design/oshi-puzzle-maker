@@ -102,6 +102,8 @@ export class Puzzle {
           p.y = Math.max(0, Math.min(p.y * scaleY, h - this.pH));
         }
       }
+      // pW/pHが変わったのでPath2Dキャッシュを無効化
+      for (const p of this.pieces) delete p._path;
       this._render();
     }
   }
@@ -303,18 +305,23 @@ export class Puzzle {
     );
   }
 
-  _piecePath(p) {
-    const { pW, pH } = this;
-    const { x, y } = p;
-    const e = p.edges || { top: 0, right: 0, bottom: 0, left: 0 };
-    const path = new Path2D();
-    path.moveTo(x, y);
-    this._edgePath(path, x,    y,    x+pW, y,    e.top,    0, -1);
-    this._edgePath(path, x+pW, y,    x+pW, y+pH, e.right,  1,  0);
-    this._edgePath(path, x+pW, y+pH, x,    y+pH, e.bottom, 0,  1);
-    this._edgePath(path, x,    y+pH, x,    y,    e.left,  -1,  0);
-    path.closePath();
-    return path;
+  // Path2Dをローカル座標（原点0,0）でキャッシュ。pW/pHが変わった時のみ再生成。
+  _getPiecePath(p) {
+    if (!p._path || p._pathPW !== this.pW || p._pathPH !== this.pH) {
+      const e = p.edges || { top: 0, right: 0, bottom: 0, left: 0 };
+      const { pW, pH } = this;
+      const path = new Path2D();
+      path.moveTo(0, 0);
+      this._edgePath(path, 0,  0,  pW, 0,  e.top,    0, -1);
+      this._edgePath(path, pW, 0,  pW, pH, e.right,  1,  0);
+      this._edgePath(path, pW, pH, 0,  pH, e.bottom, 0,  1);
+      this._edgePath(path, 0,  pH, 0,  0,  e.left,  -1,  0);
+      path.closePath();
+      p._path = path;
+      p._pathPW = pW;
+      p._pathPH = pH;
+    }
+    return p._path;
   }
 
   _edgePath(path, x1, y1, x2, y2, type, perpX, perpY) {
@@ -401,9 +408,12 @@ export class Puzzle {
       ctx.strokeStyle = 'rgba(100,210,255,0.85)';
       ctx.lineWidth   = 2;
       for (const p of group) {
-        const prev = this._piecePath({ ...p, x: p.x + moveX, y: p.y + moveY });
+        ctx.save();
+        ctx.translate(p.x + moveX, p.y + moveY);
+        const prev = this._getPiecePath(p);
         ctx.fill(prev);
         ctx.stroke(prev);
+        ctx.restore();
       }
       ctx.restore();
       return;
@@ -419,9 +429,12 @@ export class Puzzle {
         ctx.strokeStyle = '#FFD700';
         ctx.lineWidth   = 2;
         for (const p of group) {
-          const prev = this._piecePath({ ...p, x: p.x + moveX, y: p.y + moveY });
+          ctx.save();
+          ctx.translate(p.x + moveX, p.y + moveY);
+          const prev = this._getPiecePath(p);
           ctx.fill(prev);
           ctx.stroke(prev);
+          ctx.restore();
         }
         ctx.restore();
         return;
@@ -445,18 +458,18 @@ export class Puzzle {
       ctx.shadowOffsetY = 2;
     }
 
-    const path = this._piecePath(p);
+    // translate→キャッシュパスでclip（毎フレームのPath2D生成を排除）
+    ctx.translate(p.x, p.y);
+    const path = this._getPiecePath(p);
     ctx.clip(path);
 
-    // シャドウをリセット（枠線に影が出ないように）
-    ctx.shadowColor = 'transparent';
-    ctx.shadowBlur  = 0;
+    ctx.shadowColor   = 'transparent';
+    ctx.shadowBlur    = 0;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
 
-    // ジグソータブ部分まで正しく描画されるよう、セル位置に合わせて全体画像をマッピング
     const iW = image.width, iH = image.height;
     const cellW = iW / cols, cellH = iH / rows;
-    // タブは左右方向にpH×0.30、上下方向にpW×0.30突出するため
-    // アスペクト比に合わせてEXTRAを動的計算（非正方形ピース対応）
     const EXTRA_X = Math.max(0.36, 0.32 * pH / pW);
     const EXTRA_Y = Math.max(0.36, 0.32 * pW / pH);
     const srcL = Math.max(0, (p.c - EXTRA_X) * cellW);
@@ -465,19 +478,21 @@ export class Puzzle {
     const srcB = Math.min(iH, (p.r + 1 + EXTRA_Y) * cellH);
     const scX  = pW / cellW;
     const scY  = pH / cellH;
+    // ローカル座標系（translate済み）: destX = -c*pW + srcL*scX
     ctx.drawImage(
       image,
       srcL, srcT, srcR - srcL, srcB - srcT,
-      p.x - p.c * pW + srcL * scX,
-      p.y - p.r * pH + srcT * scY,
+      -p.c * pW + srcL * scX,
+      -p.r * pH + srcT * scY,
       (srcR - srcL) * scX,
       (srcB - srcT) * scY
     );
 
     ctx.restore();
 
-    // 輪郭線（clip外で描画してエッジが消えないように）
+    // 輪郭線（clip外で描画）
     ctx.save();
+    ctx.translate(p.x, p.y);
     ctx.strokeStyle = isDragging  ? '#FFD700'
                     : p.placed    ? 'rgba(255,255,255,0.18)'
                     :               'rgba(255,255,255,0.5)';
@@ -505,7 +520,7 @@ export class Puzzle {
     if (!t) return;
     const r = this._rect();
     this._moveDrag(t.clientX - r.left, t.clientY - r.top);
-    this._render();
+    this._scheduleRender();
   }
 
   _onTEnd(e) {
@@ -526,10 +541,19 @@ export class Puzzle {
     if (!this.dragPiece) return;
     const r = this._rect();
     this._moveDrag(e.clientX - r.left, e.clientY - r.top);
-    this._render();
+    this._scheduleRender();
   }
 
   _onMUp() { this._endDrag(); }
+
+  // rAFでレンダリングをVsyncに同期し、過剰描画を防ぐ
+  _scheduleRender() {
+    if (this._rafId) return;
+    this._rafId = requestAnimationFrame(() => {
+      this._rafId = null;
+      this._render();
+    });
+  }
 
   _attachEvents() {
     const c = this.canvas;
@@ -600,6 +624,7 @@ export class Puzzle {
     this._stopTimer();
     this._detachEvents();
     clearTimeout(this.saveTimer);
+    if (this._rafId) { cancelAnimationFrame(this._rafId); this._rafId = null; }
   }
 
   countPlaced() { return this.pieces.filter(p => p.placed).length; }
