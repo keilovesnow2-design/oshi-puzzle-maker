@@ -355,6 +355,13 @@ export class Puzzle {
     }
     ctx.restore();
 
+    // 接合部ギャップ防止: グリッドエリアに薄くベース画像を描画
+    // （CanvasクリップのAAで黒背景が漏れるのを防ぐ）
+    ctx.save();
+    ctx.globalAlpha = 0.15;
+    ctx.drawImage(this.image, this.gX, this.gY, pW * cols, pH * rows);
+    ctx.restore();
+
     // スナッププレビュー（ドラッグ中のみ）
     if (this.dragSet) this._drawSnapPreview();
 
@@ -448,11 +455,14 @@ export class Puzzle {
     // ジグソータブ部分まで正しく描画されるよう、セル位置に合わせて全体画像をマッピング
     const iW = image.width, iH = image.height;
     const cellW = iW / cols, cellH = iH / rows;
-    const EXTRA = 0.35;
-    const srcL = Math.max(0, (p.c - EXTRA) * cellW);
-    const srcT = Math.max(0, (p.r - EXTRA) * cellH);
-    const srcR = Math.min(iW, (p.c + 1 + EXTRA) * cellW);
-    const srcB = Math.min(iH, (p.r + 1 + EXTRA) * cellH);
+    // タブは左右方向にpH×0.30、上下方向にpW×0.30突出するため
+    // アスペクト比に合わせてEXTRAを動的計算（非正方形ピース対応）
+    const EXTRA_X = Math.max(0.36, 0.32 * pH / pW);
+    const EXTRA_Y = Math.max(0.36, 0.32 * pW / pH);
+    const srcL = Math.max(0, (p.c - EXTRA_X) * cellW);
+    const srcT = Math.max(0, (p.r - EXTRA_Y) * cellH);
+    const srcR = Math.min(iW, (p.c + 1 + EXTRA_X) * cellW);
+    const srcB = Math.min(iH, (p.r + 1 + EXTRA_Y) * cellH);
     const scX  = pW / cellW;
     const scY  = pH / cellH;
     ctx.drawImage(
