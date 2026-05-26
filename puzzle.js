@@ -444,13 +444,29 @@ export class Puzzle {
 
   _drawPiece(p, isDragging) {
     const { ctx, image, pW, pH, cols, rows } = this;
+
+    // ドラッグ中: clip外でドロップシャドウをfillトリックで描画
+    // （clip後にshadowをクリアするため、このpassが唯一有効なシャドウ描画）
+    if (isDragging) {
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.shadowColor   = 'rgba(0,0,0,0.60)';
+      ctx.shadowBlur    = 24;
+      ctx.shadowOffsetX = 5;
+      ctx.shadowOffsetY = 8;
+      ctx.fillStyle     = 'rgba(0,0,0,0.01)';
+      ctx.fill(this._getPiecePath(p));
+      ctx.restore();
+    }
+
     ctx.save();
 
     if (isDragging) {
-      ctx.shadowColor   = 'rgba(0,0,0,0.65)';
-      ctx.shadowBlur    = 20;
-      ctx.shadowOffsetX = 5;
-      ctx.shadowOffsetY = 5;
+      // 1.03倍拡大でピースが"持ち上がって見える"（ピース中心基準）
+      const cx = p.x + pW / 2, cy = p.y + pH / 2;
+      ctx.translate(cx, cy);
+      ctx.scale(1.03, 1.03);
+      ctx.translate(-cx, -cy);
     } else if (!p.placed) {
       ctx.shadowColor   = 'rgba(0,0,0,0.3)';
       ctx.shadowBlur    = 6;
@@ -488,10 +504,22 @@ export class Puzzle {
       (srcB - srcT) * scY
     );
 
+    // ドラッグ中: 白トーンで明るさを演出（clip内なのでピース形状に自動クリップ）
+    if (isDragging) {
+      ctx.fillStyle = 'rgba(255,255,255,0.10)';
+      ctx.fillRect(0, 0, pW, pH);
+    }
+
     ctx.restore();
 
     // 輪郭線（clip外で描画）: 暗い外枠+明るいハイライトの2重ストロークで形状を強調
     ctx.save();
+    if (isDragging) {
+      const cx = p.x + pW / 2, cy = p.y + pH / 2;
+      ctx.translate(cx, cy);
+      ctx.scale(1.03, 1.03);
+      ctx.translate(-cx, -cy);
+    }
     ctx.translate(p.x, p.y);
     if (isDragging) {
       ctx.strokeStyle = '#FFD700';
