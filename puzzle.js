@@ -490,14 +490,28 @@ export class Puzzle {
 
     ctx.restore();
 
-    // 輪郭線（clip外で描画）
+    // 輪郭線（clip外で描画）: 暗い外枠+明るいハイライトの2重ストロークで形状を強調
     ctx.save();
     ctx.translate(p.x, p.y);
-    ctx.strokeStyle = isDragging  ? '#FFD700'
-                    : p.placed    ? 'rgba(255,255,255,0.18)'
-                    :               'rgba(255,255,255,0.5)';
-    ctx.lineWidth   = isDragging ? 2 : p.placed ? 0.5 : 1;
-    ctx.stroke(path);
+    if (isDragging) {
+      ctx.strokeStyle = '#FFD700';
+      ctx.lineWidth   = 2;
+      ctx.stroke(path);
+    } else if (p.placed) {
+      ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+      ctx.lineWidth   = 1.5;
+      ctx.stroke(path);
+      ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+      ctx.lineWidth   = 0.8;
+      ctx.stroke(path);
+    } else {
+      ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+      ctx.lineWidth   = 2.5;
+      ctx.stroke(path);
+      ctx.strokeStyle = 'rgba(255,255,255,0.70)';
+      ctx.lineWidth   = 1;
+      ctx.stroke(path);
+    }
     ctx.restore();
   }
 
