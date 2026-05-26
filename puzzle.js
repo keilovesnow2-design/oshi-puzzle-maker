@@ -97,11 +97,11 @@ export class Puzzle {
           p.x = this._cx(p);
           p.y = this._cy(p);
         } else {
-          // 比率を維持して移動（グループの相対位置を保つ）
-          p.x = Math.max(0, Math.min(p.x * scaleX, w - this.pW));
-          p.y = Math.max(0, Math.min(p.y * scaleY, h - this.pH));
+          p.x = p.x * scaleX;
+          p.y = p.y * scaleY;
         }
       }
+      this._clampAllGroups();
       // pW/pHが変わったのでPath2Dキャッシュを無効化
       for (const p of this.pieces) delete p._path;
       this._render();
@@ -128,11 +128,9 @@ export class Puzzle {
       const scaleY = (this.savedVH && this.savedVH !== this.vH) ? this.vH / this.savedVH : 1;
       for (const p of this.pieces) {
         if (p.placed) { p.x = this._cx(p); p.y = this._cy(p); }
-        else {
-          p.x = Math.max(0, Math.min(p.x * scaleX, this.vW - this.pW));
-          p.y = Math.max(0, Math.min(p.y * scaleY, this.vH - this.pH));
-        }
+        else { p.x = p.x * scaleX; p.y = p.y * scaleY; }
       }
+      this._clampAllGroups();
       return;
     }
 
@@ -199,7 +197,8 @@ export class Puzzle {
     const ny = y - this.dragOffY;
     const dx = nx - this.dragPiece.x;
     const dy = ny - this.dragPiece.y;
-    for (const p of this.dragSet) { p.x += dx; p.y += dy; }
+    const { dx: cdx, dy: cdy } = this._clampGroupDelta([...this.dragSet], dx, dy);
+    for (const p of this.dragSet) { p.x += cdx; p.y += cdy; }
   }
 
   _endDrag() {
@@ -213,10 +212,52 @@ export class Puzzle {
     // 優先2: 盤面スナップ
     if (!snapped) this._tryBoardSnap(group);
 
+    // 未配置グループを安全範囲に収める
+    const nonPlaced = group.filter(p => !p.placed);
+    if (nonPlaced.length > 0) this._clampGroupToSafe(nonPlaced);
+
     this._render();
     this._scheduleSave();
     if (this.onUpdate) this.onUpdate(this.elapsed);
     this._checkComplete();
+  }
+
+  // ── Bounds Clamp ───────────────────────────────────────────────────────
+
+  // ドラッググループが安全範囲から完全に外れないようにデルタを制限する
+  // VIS: 最低限見えていなければならないピクセル数
+  // REF: 画面下部の「見本」ボタン確保領域（canvas座標）
+  _clampGroupDelta(group, dx, dy) {
+    const { pW, pH, vW, vH } = this;
+    const VIS = 30;
+    const REF = 60;
+    let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+    for (const p of group) {
+      l = Math.min(l, p.x);   t = Math.min(t, p.y);
+      r = Math.max(r, p.x + pW); b = Math.max(b, p.y + pH);
+    }
+    const nl = l + dx, nt = t + dy, nr = r + dx, nb = b + dy;
+    let cdx = dx, cdy = dy;
+    if (nr < VIS)                  cdx += VIS - nr;
+    else if (nl > vW - VIS)        cdx -= nl - (vW - VIS);
+    if (nb < VIS)                  cdy += VIS - nb;
+    else if (nt > vH - REF - VIS)  cdy -= nt - (vH - REF - VIS);
+    return { dx: cdx, dy: cdy };
+  }
+
+  _clampGroupToSafe(group) {
+    const { dx, dy } = this._clampGroupDelta(group, 0, 0);
+    if (dx !== 0 || dy !== 0) for (const p of group) { p.x += dx; p.y += dy; }
+  }
+
+  _clampAllGroups() {
+    const groups = new Map();
+    for (const p of this.pieces) {
+      if (p.placed) continue;
+      if (!groups.has(p.groupId)) groups.set(p.groupId, []);
+      groups.get(p.groupId).push(p);
+    }
+    for (const group of groups.values()) this._clampGroupToSafe(group);
   }
 
   // ── Snap ───────────────────────────────────────────────────────────────
