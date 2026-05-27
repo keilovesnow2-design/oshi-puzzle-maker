@@ -337,6 +337,37 @@ html, body {
   display: block;
 }
 
+/* ===== COMPLETE SCREEN LINE PROMO ===== */
+.complete-line-promo {
+  width: 100%;
+  max-width: 400px;
+  background: rgba(233,69,96,0.07);
+  border: 1px solid rgba(233,69,96,0.2);
+  border-radius: var(--radius);
+  padding: 18px 16px;
+  text-align: center;
+}
+
+.complete-line-text {
+  font-size: 0.82rem;
+  color: var(--text-sub);
+  line-height: 1.75;
+  margin-bottom: 14px;
+}
+
+.btn-line-complete {
+  background: linear-gradient(135deg, #ff7eb3, #e94560);
+  color: #fff;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: rgba(160,160,176,0.6);
+  border: 1px solid rgba(255,255,255,0.08);
+  font-weight: 400;
+  font-size: 0.88rem;
+}
+
 /* ===== LINE PROMO ===== */
 .line-promo {
   width: 100%;

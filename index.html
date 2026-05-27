@@ -107,8 +107,14 @@
   <div class="complete-title">パズル完成！</div>
   <div class="complete-time" id="completeTime">00:00</div>
   <div class="complete-sub" id="completeSub"></div>
-  <button class="btn btn-primary" id="playAgainBtn">もう一度遊ぶ</button>
-  <p class="line-hint">新機能やプレゼント情報は公式LINEでお知らせします</p>
+
+  <div class="complete-line-promo">
+    <p class="complete-line-text">楽しんでいただけましたか？😊<br>Neutral Worksでは、スマホで遊べるミニアプリや便利ツールを制作しています。<br><br>友だち追加してくださった方には、<br>新作アプリ・アップデート情報・無料プレゼントをお届けします🎁</p>
+    <button class="btn btn-line-complete" id="completeLINEBtn">公式LINEを友だち追加する</button>
+  </div>
+
+  <button class="btn btn-secondary" id="playAgainBtn">もう一度遊ぶ</button>
+  <button class="btn btn-ghost" id="backToTopBtn">トップに戻る</button>
 </div>
 
 <script type="module">
@@ -143,6 +149,7 @@ const newGameBtn        = document.getElementById('newGameBtn');
 const resumeSub         = document.getElementById('resumeSub');
 const resetBtn          = document.getElementById('resetBtn');
 const playAgainBtn      = document.getElementById('playAgainBtn');
+const backToTopBtn      = document.getElementById('backToTopBtn');
 const canvas            = document.getElementById('puzzleCanvas');
 const refBtn            = document.getElementById('refBtn');
 const refOverlay        = document.getElementById('refOverlay');
@@ -309,8 +316,19 @@ resetBtn.addEventListener('click', async () => {
   showScreen('start');
 });
 
-// ── もう一度 ──
+// ── もう一度遊ぶ（同じ画像で再挑戦）──
 playAgainBtn.addEventListener('click', () => {
+  if (imageBlob) {
+    previewImg.src = URL.createObjectURL(imageBlob);
+    previewImg.style.display = 'block';
+    uploadPlaceholder.style.display = 'none';
+    startBtn.disabled = false;
+  }
+  showScreen('start');
+});
+
+// ── トップに戻る（画像クリア）──
+backToTopBtn.addEventListener('click', () => {
   imageBlob = null;
   if (refObjectURL) { URL.revokeObjectURL(refObjectURL); refObjectURL = null; }
   previewImg.style.display = 'none';
@@ -322,6 +340,9 @@ playAgainBtn.addEventListener('click', () => {
 
 // ── LINE友だち追加 ──
 document.getElementById('lineBtn').addEventListener('click', () => {
+  window.open(LINE_FRIEND_URL, '_blank', 'noopener,noreferrer');
+});
+document.getElementById('completeLINEBtn').addEventListener('click', () => {
   window.open(LINE_FRIEND_URL, '_blank', 'noopener,noreferrer');
 });
 
