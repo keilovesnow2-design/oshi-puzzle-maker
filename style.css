@@ -368,6 +368,37 @@ html, body {
   font-size: 0.88rem;
 }
 
+.complete-sub-actions {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  max-width: 400px;
+  flex-wrap: wrap;
+}
+
+.btn-sub {
+  flex: 1;
+  min-width: 120px;
+  padding: 12px 10px;
+  border-radius: 50px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+  transition: opacity 0.2s, transform 0.1s;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid rgba(255,255,255,0.15);
+}
+
+.btn-sub:active { transform: scale(0.97); }
+
+.btn-sub-outline {
+  background: transparent;
+  color: var(--text-sub);
+  border: 1px solid rgba(255,255,255,0.25);
+}
+
 /* ===== LINE PROMO ===== */
 .line-promo {
   width: 100%;
