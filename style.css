@@ -337,6 +337,47 @@ html, body {
   display: block;
 }
 
+/* ===== LINE PROMO ===== */
+.line-promo {
+  width: 100%;
+  max-width: 400px;
+  text-align: center;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255,255,255,0.07);
+}
+
+.line-promo-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.line-promo-text {
+  font-size: 0.78rem;
+  color: var(--text-sub);
+  line-height: 1.65;
+  margin-bottom: 14px;
+}
+
+.btn-line {
+  background: linear-gradient(135deg, #ff7eb3, #e94560);
+  color: #fff;
+  margin-bottom: 14px;
+}
+
+.line-notice {
+  font-size: 0.68rem;
+  color: rgba(160,160,176,0.5);
+  line-height: 1.55;
+}
+
+.line-hint {
+  font-size: 0.78rem;
+  color: rgba(160,160,176,0.55);
+  text-align: center;
+}
+
 /* ===== SAFE AREA ===== */
 @supports (padding: env(safe-area-inset-bottom)) {
   .screen { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }

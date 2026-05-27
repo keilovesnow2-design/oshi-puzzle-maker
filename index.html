@@ -67,6 +67,14 @@
   </div>
 
   <button class="btn btn-primary" id="startBtn" disabled>パズルをはじめる</button>
+
+  <!-- 公式LINE案内 -->
+  <div class="line-promo">
+    <p class="line-promo-title">気に入ってくださった方へ</p>
+    <p class="line-promo-text">アップデート情報や無料プレゼントを公式LINEでお届けします。<br>友だち追加してくださった方には、スマホで使える便利なミニアプリをプレゼント予定です。</p>
+    <button class="btn btn-line" id="lineBtn">公式LINEを友だち追加する</button>
+    <p class="line-notice">画像はサーバーに保存されず、端末内で処理されます。<br>このアプリは無料お試し版です。</p>
+  </div>
 </div>
 
 <!-- ===== パズル画面 ===== -->
@@ -100,11 +108,15 @@
   <div class="complete-time" id="completeTime">00:00</div>
   <div class="complete-sub" id="completeSub"></div>
   <button class="btn btn-primary" id="playAgainBtn">もう一度遊ぶ</button>
+  <p class="line-hint">新機能やプレゼント情報は公式LINEでお知らせします</p>
 </div>
 
 <script type="module">
 import { initDB, loadState, clearState, hasSavedState } from './storage.js';
 import { Puzzle, formatTime } from './puzzle.js';
+
+// ── 公式LINE ── URL変更はここだけ
+const LINE_FRIEND_URL = 'https://lin.ee/zqaJ7zp';
 
 // ── 状態 ──
 let selectedCols = 4, selectedRows = 4;
@@ -306,6 +318,11 @@ playAgainBtn.addEventListener('click', () => {
   startBtn.disabled = true;
   fileInput.value = '';
   showScreen('start');
+});
+
+// ── LINE友だち追加 ──
+document.getElementById('lineBtn').addEventListener('click', () => {
+  window.open(LINE_FRIEND_URL, '_blank', 'noopener,noreferrer');
 });
 
 boot();
