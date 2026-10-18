@@ -34,6 +34,9 @@ export class Puzzle {
     this.saveTimer      = null;
     this.completed      = false;
     this._resizeTimer   = null;
+    this._resizeObserver = null;
+    this._resizePending  = false;  // ドラッグ中に来たresizeをドロップ後に適用するためのフラグ
+    this._destroyed     = false;
     this.savedVW        = savedVW;
     this.savedVH        = savedVH;
 
@@ -56,12 +59,27 @@ export class Puzzle {
 
   _setupCanvas() {
     this._resize();
+    // debounce(220ms) + double-rAF: Androidの回転直後はlayoutが安定しておらず、
+    // 途中の寸法を拾うとピース座標が縮んだままになるため、安定を待ってから読む
     this._resizeDebounced = () => {
       clearTimeout(this._resizeTimer);
-      this._resizeTimer = setTimeout(() => this._resize(), 150);
+      this._resizeTimer = setTimeout(() => {
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          if (this._destroyed) return;
+          // ドラッグ中はpW/pHやピース座標が動くと掴んだピースがずれるので保留
+          if (this.dragSet) { this._resizePending = true; return; }
+          this._resize();
+        }));
+      }, 220);
     };
+    const cont = this.canvas.parentElement;
+    if (window.ResizeObserver && cont) {
+      this._resizeObserver = new ResizeObserver(this._resizeDebounced);
+      this._resizeObserver.observe(cont);
+    }
     window.addEventListener('resize', this._resizeDebounced);
     window.addEventListener('orientationchange', this._resizeDebounced);
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', this._resizeDebounced);
   }
 
   _resize() {
@@ -70,10 +88,15 @@ export class Puzzle {
     const w    = cont.clientWidth;
     const h    = cont.clientHeight;
     if (!w || !h) return;
+    // 寸法もdprも変わっていなければ何もしない（canvas再確保によるちらつき・座標の丸め誤差を防ぐ）
+    if (this.vW === w && this.vH === h && this._dpr === dpr) return;
+    this._dpr = dpr;
 
     // 旧サイズを保持してスケール比を計算（初回は比率1.0）
     const oldW = this.vW || w;
     const oldH = this.vH || h;
+    const oldPW = this.pW || 0;
+    const oldPH = this.pH || 0;
 
     this.canvas.width  = w * dpr;
     this.canvas.height = h * dpr;
@@ -84,8 +107,13 @@ export class Puzzle {
     this.vW = w;
     this.vH = h;
 
-    this.pW = Math.floor(w * 0.85 / this.cols);
-    this.pH = Math.floor(h * 0.85 / this.rows);
+    // 盤面は写真の縦横比を保って最大サイズで配置（画面の形に引き伸ばして写真が歪むのを防ぐ）
+    const imgAR = this.image.width / this.image.height;
+    let bW = w * 0.97;
+    let bH = bW / imgAR;
+    if (bH > h * 0.97) { bH = h * 0.97; bW = bH * imgAR; }
+    this.pW = Math.floor(bW / this.cols);
+    this.pH = Math.floor(bH / this.rows);
     this.gX = Math.floor((w - this.pW * this.cols) / 2);
     this.gY = Math.floor((h - this.pH * this.rows) / 2);
 
@@ -97,11 +125,12 @@ export class Puzzle {
           p.x = this._cx(p);
           p.y = this._cy(p);
         } else {
-          p.x = p.x * scaleX;
-          p.y = p.y * scaleY;
+          // ピースの寸法も変わるので、左上ではなく中心を比率で写す
+          p.x = (p.x + oldPW / 2) * scaleX - this.pW / 2;
+          p.y = (p.y + oldPH / 2) * scaleY - this.pH / 2;
         }
       }
-      this._clampAllGroups();
+      this._clampAllGroups(true);
       // pW/pHが変わったのでPath2Dキャッシュを無効化
       for (const p of this.pieces) delete p._path;
       this._render();
@@ -216,6 +245,9 @@ export class Puzzle {
     const nonPlaced = group.filter(p => !p.placed);
     if (nonPlaced.length > 0) this._clampGroupToSafe(nonPlaced);
 
+    // ドラッグ中に保留されたresizeをここで適用
+    if (this._resizePending) { this._resizePending = false; this._resize(); }
+
     this._render();
     this._scheduleSave();
     if (this.onUpdate) this.onUpdate(this.elapsed);
@@ -250,14 +282,31 @@ export class Puzzle {
     if (dx !== 0 || dy !== 0) for (const p of group) { p.x += dx; p.y += dy; }
   }
 
-  _clampAllGroups() {
+  // fullInside=true: グループ全体を画面内に収める（収まらない大きさなら従来の最低表示量にフォールバック）
+  _clampAllGroups(fullInside = false) {
     const groups = new Map();
     for (const p of this.pieces) {
       if (p.placed) continue;
       if (!groups.has(p.groupId)) groups.set(p.groupId, []);
       groups.get(p.groupId).push(p);
     }
-    for (const group of groups.values()) this._clampGroupToSafe(group);
+    for (const group of groups.values()) {
+      if (fullInside) this._clampGroupInside(group);
+      this._clampGroupToSafe(group);
+    }
+  }
+
+  _clampGroupInside(group) {
+    const { pW, pH, vW, vH } = this;
+    let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+    for (const p of group) {
+      l = Math.min(l, p.x); t = Math.min(t, p.y);
+      r = Math.max(r, p.x + pW); b = Math.max(b, p.y + pH);
+    }
+    let dx = 0, dy = 0;
+    if (r - l <= vW) { if (l < 0) dx = -l; else if (r > vW) dx = vW - r; }
+    if (b - t <= vH) { if (t < 0) dy = -t; else if (b > vH) dy = vH - b; }
+    if (dx || dy) for (const p of group) { p.x += dx; p.y += dy; }
   }
 
   // ── Snap ───────────────────────────────────────────────────────────────
@@ -692,6 +741,8 @@ export class Puzzle {
     window.removeEventListener('mouseup',   this._onMUp);
     window.removeEventListener('resize', this._resizeDebounced);
     window.removeEventListener('orientationchange', this._resizeDebounced);
+    if (window.visualViewport) window.visualViewport.removeEventListener('resize', this._resizeDebounced);
+    if (this._resizeObserver) { this._resizeObserver.disconnect(); this._resizeObserver = null; }
     clearTimeout(this._resizeTimer);
   }
 
@@ -736,6 +787,7 @@ export class Puzzle {
   }
 
   destroy() {
+    this._destroyed = true;
     this._stopTimer();
     this._detachEvents();
     clearTimeout(this.saveTimer);
