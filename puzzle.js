@@ -596,21 +596,21 @@ export class Puzzle {
     ctx.translate(p.x, p.y);
     if (isDragging) {
       ctx.strokeStyle = '#FFD700';
-      ctx.lineWidth   = 2;
+      ctx.lineWidth   = 1.5;
       ctx.stroke(path);
     } else if (p.placed) {
       ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-      ctx.lineWidth   = 1.5;
+      ctx.lineWidth   = 0.8;
       ctx.stroke(path);
       ctx.strokeStyle = 'rgba(255,255,255,0.28)';
-      ctx.lineWidth   = 0.8;
+      ctx.lineWidth   = 0.5;
       ctx.stroke(path);
     } else {
       ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-      ctx.lineWidth   = 2.5;
+      ctx.lineWidth   = 1.2;
       ctx.stroke(path);
-      ctx.strokeStyle = 'rgba(255,255,255,0.70)';
-      ctx.lineWidth   = 1;
+      ctx.strokeStyle = 'rgba(255,255,255,0.60)';
+      ctx.lineWidth   = 0.6;
       ctx.stroke(path);
     }
     ctx.restore();
