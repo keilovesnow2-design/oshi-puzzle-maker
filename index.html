@@ -7,7 +7,18 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="theme-color" content="#1a1a2e">
   <title>推しパズルメーカー</title>
-  <link rel="stylesheet" href="style.css?v=1019g">
+  <script>
+  // LINEアプリ内ブラウザでは画像選択(input type=file)が正常動作しないため、
+  // LINE公式のURLパラメータ openExternalBrowser=1 を付けて外部ブラウザへ誘導する
+  (function () {
+    if (!/\bLine\//i.test(navigator.userAgent)) return;
+    if (!/[?&]openExternalBrowser=1/.test(location.search)) {
+      var sep = location.search ? '&' : '?';
+      location.replace(location.href.split('#')[0] + sep + 'openExternalBrowser=1');
+    }
+  })();
+  </script>
+  <link rel="stylesheet" href="style.css?v=1019j">
 </head>
 <body>
 
@@ -40,6 +51,7 @@
       </div>
       <img id="previewImg" class="preview-img" alt="プレビュー">
     </div>
+    <button class="btn btn-readjust" id="readjustBtn" style="display:none">画像の位置を再調整する</button>
   </div>
 
   <div class="card">
@@ -74,30 +86,72 @@
     <p class="line-promo-text">アップデート情報や無料プレゼントを公式LINEでお届けします。<br>友だち追加してくださった方には、スマホで使える便利なミニアプリをプレゼント予定です。</p>
     <button class="btn btn-line" id="lineBtn">公式LINEを友だち追加する</button>
     <p class="line-notice">画像はサーバーに保存されず、端末内で処理されます。<br>このアプリは無料お試し版です。</p>
+    <p class="version-tag" id="versionTag"></p>
+  </div>
+</div>
+
+<!-- ===== ベストショット調整画面 ===== -->
+<div id="cropScreen" class="screen hidden">
+  <div class="crop-header">
+    <button class="crop-back-btn" id="cropBackBtn">戻る</button>
+    <span class="crop-title">ベストショット調整</span>
+    <div style="width:52px"></div>
+  </div>
+  <div id="cropLandscapeWarn">縦向きでの編集をおすすめします</div>
+  <div class="crop-hint-text">動かして・広げてパズルの範囲を選ぼう</div>
+  <div id="cropCanvasWrap">
+    <canvas id="cropCanvas"></canvas>
+    <div class="crop-frame-border"></div>
+  </div>
+  <div class="crop-footer">
+    <div id="cropQualityWarn" class="crop-quality-warn hidden">⚠ 拡大しすぎると画質が粗くなる場合があります</div>
+    <button class="btn btn-primary" id="cropConfirmBtn">この範囲で決定</button>
+    <button class="crop-whole-btn" id="cropWholeBtn">写真全体をそのまま使う（文字も入る）</button>
   </div>
 </div>
 
 <!-- ===== パズル画面 ===== -->
 <div id="puzzleScreen" class="screen hidden">
-  <div class="puzzle-header">
-    <div class="puzzle-timer" id="timerDisplay">00:00</div>
-    <div class="puzzle-progress">
-      <div id="progressText">0 / 0</div>
-      <div class="progress-bar">
-        <div class="progress-fill" id="progressFill" style="width:0%"></div>
-      </div>
-    </div>
-    <button class="btn btn-danger" id="resetBtn" style="width:auto;max-width:none;padding:8px 14px;font-size:0.78rem;">リセット</button>
-  </div>
   <div id="canvasContainer">
     <canvas id="puzzleCanvas"></canvas>
   </div>
-  <!-- 見本ボタン -->
-  <button id="refBtn" class="ref-btn" aria-label="完成見本を表示">見本</button>
+  <!-- 下部バー: タイマー / 進捗 / 見本 / 設定 -->
+  <div class="puzzle-bar">
+    <div class="bar-progress"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+    <div class="puzzle-timer" id="timerDisplay">00:00</div>
+    <div class="bar-progress-text" id="progressText">0 / 0</div>
+    <div class="bar-spacer"></div>
+    <button id="refBtn" class="bar-btn" aria-label="完成見本を表示">見本</button>
+    <button id="menuBtn" class="bar-btn" aria-label="設定">設定</button>
+    <button id="finishBtn" class="bar-btn bar-btn-primary" style="display:none">終了する</button>
+  </div>
   <!-- 見本オーバーレイ（ブラウザ内画像のみ・サーバー非送信） -->
   <div id="refOverlay" class="ref-overlay hidden">
     <div class="ref-header">完成見本</div>
     <img id="refImg" alt="完成見本">
+  </div>
+  <!-- 設定メニュー -->
+  <div id="menuSheet" class="menu-sheet hidden">
+    <button class="menu-item" id="timerToggleBtn">タイマー表示: ON</button>
+    <button class="menu-item" id="pauseBtn">一時停止</button>
+    <button class="menu-item menu-item-danger" id="resetBtn">リセット</button>
+    <button class="menu-item" id="quitBtn">中断して終了<span class="menu-sub">（続きから再開できます）</span></button>
+  </div>
+  <!-- 一時停止オーバーレイ -->
+  <div id="pauseOverlay" class="pause-overlay hidden">
+    <div class="pause-box">
+      <div class="pause-title">一時停止中</div>
+      <button class="btn btn-primary" id="resumePlayBtn">再開する</button>
+    </div>
+  </div>
+  <!-- 戻る操作の確認オーバーレイ -->
+  <div id="exitConfirm" class="pause-overlay hidden">
+    <div class="pause-box">
+      <div class="pause-title">ゲームを中断しますか？</div>
+      <p class="exit-note">ここまでの進み具合は自動保存されています。<br>次回開いたとき「続きから再開」できます。</p>
+      <button class="btn btn-primary" id="exitContinueBtn">遊び続ける</button>
+      <button class="btn btn-secondary" id="exitQuitBtn">中断して終了</button>
+    </div>
   </div>
 </div>
 
@@ -120,8 +174,27 @@
 </div>
 
 <script type="module">
+// ?v= はキャッシュバスター。更新時は APP_VERSION と合わせて全箇所書き換えること。
+// storage.js は puzzle.js 内部からも素のURLでimportされるため、二重インスタンス化を
+// 防ぐ目的であえて ?v= を付けない（付けると別モジュール扱いになりDB接続が分裂する）
 import { initDB, loadState, clearState, hasSavedState } from './storage.js';
-import { Puzzle, formatTime } from './puzzle.js?v=1019g';
+import { Puzzle, formatTime } from './puzzle.js?v=1019j';
+import { CropScreen } from './crop.js?v=1019j';
+
+const APP_VERSION = 'v1019j';
+
+// ── ?debug=1: 画像選択の動作ログ（実機調査用・通常は非表示）──
+const DBG = /[?&]debug=1/.test(location.search);
+let dbgBox = null;
+function dbgLog(msg) {
+  if (!DBG) return;
+  if (!dbgBox) {
+    dbgBox = document.createElement('div');
+    dbgBox.style.cssText = 'position:fixed;left:4px;bottom:4px;z-index:99999;background:rgba(0,0,0,0.85);color:#0f0;font-size:11px;padding:6px 8px;border-radius:6px;max-width:92vw;pointer-events:none;white-space:pre-wrap;font-family:monospace;';
+    document.body.appendChild(dbgBox);
+  }
+  dbgBox.textContent += (dbgBox.textContent ? '\n' : '') + new Date().toTimeString().slice(0, 8) + ' ' + msg;
+}
 
 // ── 公式LINE ── URL変更はここだけ
 const LINE_FRIEND_URL = 'https://lin.ee/zqaJ7zp';
@@ -129,17 +202,20 @@ const LINE_FRIEND_URL = 'https://lin.ee/zqaJ7zp';
 // ── 状態 ──
 let selectedCols = 4, selectedRows = 4;
 let imageBlob = null;
+let originalFileBlob = null;
+let cropReturnState = 'new'; // 'new' | 'readjust'
 let puzzle = null;
-let refObjectURL = null; // createObjectURL の管理
+let refObjectURL = null;
 
 // ── 要素 ──
 const screens = {
   resume:   document.getElementById('resumeDialog'),
   start:    document.getElementById('startScreen'),
+  crop:     document.getElementById('cropScreen'),
   puzzle:   document.getElementById('puzzleScreen'),
   complete: document.getElementById('completeScreen'),
 };
-const fileInput         = document.getElementById('fileInput');
+let fileInput           = document.getElementById('fileInput'); // 再生成するためlet
 const previewImg        = document.getElementById('previewImg');
 const uploadPlaceholder = document.getElementById('uploadPlaceholder');
 const startBtn          = document.getElementById('startBtn');
@@ -156,16 +232,52 @@ const canvas            = document.getElementById('puzzleCanvas');
 const refBtn            = document.getElementById('refBtn');
 const refOverlay        = document.getElementById('refOverlay');
 const refImg            = document.getElementById('refImg');
+const cropCanvas        = document.getElementById('cropCanvas');
+const cropCanvasWrap    = document.getElementById('cropCanvasWrap');
+const cropQualityWarn   = document.getElementById('cropQualityWarn');
+const cropConfirmBtn    = document.getElementById('cropConfirmBtn');
+const cropBackBtn       = document.getElementById('cropBackBtn');
+const readjustBtn       = document.getElementById('readjustBtn');
 
+// ── CropScreen インスタンス（imageBlob 確定までの前段UI）──
+const cropScreen = new CropScreen({
+  canvas:      cropCanvas,
+  wrap:        cropCanvasWrap,
+  qualityWarn: cropQualityWarn,
+  onConfirm: blob => {
+    imageBlob = blob;
+    previewImg.src = URL.createObjectURL(blob);
+    previewImg.style.display = 'block';
+    uploadPlaceholder.style.display = 'none';
+    startBtn.disabled = false;
+    readjustBtn.style.display = '';
+    showScreen('start');
+  },
+  onBack: () => {
+    if (cropReturnState === 'new') {
+      // 初回選択キャンセル → 未選択状態に戻す
+      imageBlob = null;
+      originalFileBlob = null;
+      previewImg.style.display = 'none';
+      uploadPlaceholder.style.display = '';
+      startBtn.disabled = true;
+      readjustBtn.style.display = 'none';
+      fileInput.value = '';
+    }
+    // 再調整キャンセル → 既存プレビューをそのまま維持
+    showScreen('start');
+  },
+});
+
+// ── 画面切替 ──
 function showScreen(name) {
   Object.values(screens).forEach(s => s.classList.add('hidden'));
   screens[name].classList.remove('hidden');
-  // パズル以外の画面では見本を隠す
   if (name !== 'puzzle') {
     refOverlay.classList.add('hidden');
-    refBtn.classList.add('hidden');
-  } else {
-    refBtn.classList.remove('hidden');
+    menuSheet.classList.add('hidden');
+    pauseOverlay.classList.add('hidden');
+    exitConfirm.classList.add('hidden');
   }
 }
 
@@ -177,6 +289,16 @@ function updateProgress(total) {
 }
 
 // ── 起動 ──
+document.getElementById('versionTag').textContent = APP_VERSION + (DBG ? ' (debug)' : '');
+
+// LINE内ブラウザのまま表示されている場合（外部ブラウザ誘導が効かなかった場合）の案内
+if (/\bLine\//i.test(navigator.userAgent)) {
+  const tip = document.createElement('div');
+  tip.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#06c755;color:#fff;font-size:12px;line-height:1.6;padding:8px 12px;text-align:center;';
+  tip.textContent = 'LINE内ブラウザでは画像選択が動かないことがあります。画面右下の「…」メニュー →「他のアプリで開く」でブラウザからご利用ください。';
+  document.body.appendChild(tip);
+}
+
 async function boot() {
   await initDB();
   if (hasSavedState()) {
@@ -208,13 +330,36 @@ newGameBtn.addEventListener('click', async () => {
 });
 
 // ── 画像選択 ──
-fileInput.addEventListener('change', e => {
-  const file = e.target.files[0];
-  if (!file) return;
-  setImage(file);
-});
+// Android Chrome既知問題対策: 写真ピッカーをキャンセルすると同じinput要素が
+// 再び開かなくなることがあるため、選択/キャンセルの度にinputを新品に作り直す
+function bindFileInput(el) {
+  el.addEventListener('click', () => dbgLog('input click'));
+  el.addEventListener('change', e => {
+    const file = e.target.files[0];
+    dbgLog('change files=' + e.target.files.length);
+    rebuildFileInput();
+    if (!file) return;
+    setImage(file);
+  });
+  el.addEventListener('cancel', () => {
+    dbgLog('cancel');
+    rebuildFileInput();
+  });
+}
+
+function rebuildFileInput() {
+  const fresh = fileInput.cloneNode(false);
+  fileInput.replaceWith(fresh);
+  fileInput = fresh;
+  bindFileInput(fresh);
+  dbgLog('input rebuilt');
+}
+
+bindFileInput(fileInput);
 
 const uploadArea = document.getElementById('uploadArea');
+// [debug] タップがどの要素に届いているかを記録（input以外に吸われていないか確認用）
+uploadArea.addEventListener('pointerdown', e => dbgLog('area tap → ' + (e.target.id || e.target.tagName)));
 uploadArea.addEventListener('dragover',  e => { e.preventDefault(); uploadArea.classList.add('drag-over'); });
 uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('drag-over'));
 uploadArea.addEventListener('drop', e => {
@@ -225,12 +370,11 @@ uploadArea.addEventListener('drop', e => {
 });
 
 function setImage(file) {
-  imageBlob = file;
-  const url = URL.createObjectURL(file);
-  previewImg.src = url;
-  previewImg.style.display = 'block';
-  uploadPlaceholder.style.display = 'none';
-  startBtn.disabled = false;
+  originalFileBlob = file;
+  cropReturnState = 'new';
+  showScreen('crop');
+  armBackTrap();
+  cropScreen.open(originalFileBlob);
 }
 
 // ── 難易度 ──
@@ -263,11 +407,16 @@ function blobToImage(blob) {
 
 function startPuzzle(img, cols, rows, elapsed, savedPieces, savedVW, savedVH) {
   showScreen('puzzle');
+  armBackTrap();
   if (puzzle) puzzle.destroy();
 
   const total = cols * rows;
 
-  // 見本画像を設定（ブラウザ内 Blob のみ・サーバー非送信）
+  // バーを通常状態に戻す
+  refBtn.style.display = '';
+  menuBtn.style.display = '';
+  finishBtn.style.display = 'none';
+
   if (refObjectURL) URL.revokeObjectURL(refObjectURL);
   refObjectURL = URL.createObjectURL(imageBlob);
   refImg.src = refObjectURL;
@@ -283,10 +432,16 @@ function startPuzzle(img, cols, rows, elapsed, savedPieces, savedVW, savedVH) {
     savedVW,
     savedVH,
     onComplete: sec => {
-      showScreen('complete');
-      document.getElementById('completeTime').textContent = formatTime(sec);
-      document.getElementById('completeSub').textContent =
-        `${cols * rows}ピースを${Math.floor(sec/60)}分${sec%60}秒でクリア！`;
+      // 完成: 画面は切り替えず眺め放題モードへ（バーだけ変身）
+      lastClearSec = sec;
+      lastClearTotal = total;
+      refOverlay.classList.add('hidden');
+      menuSheet.classList.add('hidden');
+      refBtn.style.display = 'none';
+      menuBtn.style.display = 'none';
+      finishBtn.style.display = '';
+      progressText.textContent = '完成！🎉';
+      timerDisplay.textContent = formatTime(sec);
     },
     onUpdate: sec => {
       timerDisplay.textContent = formatTime(sec);
@@ -297,12 +452,116 @@ function startPuzzle(img, cols, rows, elapsed, savedPieces, savedVW, savedVH) {
   puzzle.setImageBlob(imageBlob);
   updateProgress(total);
   timerDisplay.textContent = formatTime(elapsed);
+  if (DBG) window.__puzzle = puzzle; // [debug] 実機/自動テスト用フック
 }
+
+// ── 完成後「終了する」→ お祝い画面 ──
+let lastClearSec = 0, lastClearTotal = 0;
+const finishBtn = document.getElementById('finishBtn');
+function showCompleteScreen() {
+  showScreen('complete');
+  document.getElementById('completeTime').textContent = formatTime(lastClearSec);
+  document.getElementById('completeSub').textContent =
+    `${lastClearTotal}ピースを${Math.floor(lastClearSec/60)}分${lastClearSec%60}秒でクリア！`;
+}
+finishBtn.addEventListener('click', showCompleteScreen);
 
 // ── 見本トグル ──
 refBtn.addEventListener('click', () => {
   refOverlay.classList.toggle('hidden');
 });
+
+// ── 下部バー: 設定メニュー ──
+const menuBtn        = document.getElementById('menuBtn');
+const menuSheet      = document.getElementById('menuSheet');
+const timerToggleBtn = document.getElementById('timerToggleBtn');
+const pauseBtn       = document.getElementById('pauseBtn');
+const quitBtn        = document.getElementById('quitBtn');
+const pauseOverlay   = document.getElementById('pauseOverlay');
+const resumePlayBtn  = document.getElementById('resumePlayBtn');
+
+// メニューを開いている間はタイマーも停止する
+function setMenuOpen(open) {
+  menuSheet.classList.toggle('hidden', !open);
+  if (!puzzle) return;
+  if (open) puzzle.pause();
+  else if (pauseOverlay.classList.contains('hidden')) puzzle.resume();
+}
+menuBtn.addEventListener('click', () => setMenuOpen(menuSheet.classList.contains('hidden')));
+
+// タイマー表示 ON/OFF（設定は端末に保存）
+function applyTimerVisibility() {
+  const show = localStorage.getItem('oshiTimerVisible') !== '0';
+  timerDisplay.style.visibility = show ? '' : 'hidden';
+  timerToggleBtn.textContent = 'タイマー表示: ' + (show ? 'ON' : 'OFF');
+}
+timerToggleBtn.addEventListener('click', () => {
+  const show = localStorage.getItem('oshiTimerVisible') !== '0';
+  localStorage.setItem('oshiTimerVisible', show ? '0' : '1');
+  applyTimerVisibility();
+});
+applyTimerVisibility();
+
+// 一時停止 / 再開
+pauseBtn.addEventListener('click', () => {
+  setMenuOpen(false);
+  if (puzzle) puzzle.pause();
+  pauseOverlay.classList.remove('hidden');
+});
+resumePlayBtn.addEventListener('click', () => {
+  pauseOverlay.classList.add('hidden');
+  if (puzzle) puzzle.resume();
+});
+
+// 中断して終了（保存してスタート画面へ。次回開くと「続きから再開」が出る）
+async function quitToTop() {
+  try { if (puzzle) await puzzle.saveNow(); } catch (e) { console.error('save failed:', e); }
+  if (puzzle) { puzzle.destroy(); puzzle = null; }
+  exitConfirm.classList.add('hidden');
+  resetImageSelection();
+}
+quitBtn.addEventListener('click', quitToTop);
+
+// ── ブラウザ/Androidの「戻る」対策 ──
+// puzzle/crop表示中は履歴に番人を1段だけ積み、戻る操作をアプリ内の動きに変換する。
+// 番人は常に最大1個（積み重なると出口まで何回も戻るを押す羽目になるため）
+const exitConfirm = document.getElementById('exitConfirm');
+let trapArmed = false;
+function armBackTrap() {
+  if (trapArmed) return;
+  trapArmed = true;
+  history.pushState({ oshi: 1 }, '');
+}
+
+window.addEventListener('popstate', () => {
+  trapArmed = false; // 戻る1回で番人は消費される
+  const cur = Object.keys(screens).find(k => !screens[k].classList.contains('hidden'));
+  if (cur === 'puzzle' && puzzle && !puzzle.completed) {
+    armBackTrap(); // プレイ中だけ再装填（もう一度戻ってもまた確認が出る）
+    menuSheet.classList.add('hidden');
+    pauseOverlay.classList.add('hidden');
+    puzzle.pause();
+    exitConfirm.classList.remove('hidden');
+  } else if (cur === 'puzzle' && puzzle && puzzle.completed) {
+    // 完成後の眺め放題中に戻る → 「終了する」と同じ動き
+    armBackTrap();
+    showCompleteScreen();
+  } else if (cur === 'crop') {
+    cropScreen.back(); // アプリ内の「戻る」ボタンと同じ動き（再装填なし）
+  } else if (cur === 'start' && imageBlob) {
+    resetImageSelection(); // 選び直しへ（再装填なし → 次の戻るで離脱できる）
+  } else if (cur === 'complete') {
+    armBackTrap();
+    goStartWithImage();
+  }
+  // それ以外（未選択のスタート画面・再開ダイアログ）は素通し=離脱できる
+});
+
+document.getElementById('exitContinueBtn').addEventListener('click', () => {
+  exitConfirm.classList.add('hidden');
+  if (puzzle) puzzle.resume();
+});
+document.getElementById('exitQuitBtn').addEventListener('click', quitToTop);
 
 // ── リセット ──
 resetBtn.addEventListener('click', async () => {
@@ -310,35 +569,43 @@ resetBtn.addEventListener('click', async () => {
   if (puzzle) { puzzle.destroy(); puzzle = null; }
   await clearState();
   imageBlob = null;
+  originalFileBlob = null;
+  cropScreen.destroy();
   if (refObjectURL) { URL.revokeObjectURL(refObjectURL); refObjectURL = null; }
   previewImg.style.display = 'none';
   uploadPlaceholder.style.display = '';
   startBtn.disabled = true;
+  readjustBtn.style.display = 'none';
   fileInput.value = '';
   showScreen('start');
 });
 
 // ── もう一度遊ぶ（同じ画像で再挑戦）──
-playAgainBtn.addEventListener('click', () => {
+function goStartWithImage() {
   if (imageBlob) {
     previewImg.src = URL.createObjectURL(imageBlob);
     previewImg.style.display = 'block';
     uploadPlaceholder.style.display = 'none';
     startBtn.disabled = false;
+    readjustBtn.style.display = originalFileBlob ? '' : 'none';
   }
   showScreen('start');
-});
+}
+playAgainBtn.addEventListener('click', goStartWithImage);
 
-// ── トップに戻る（画像クリア）──
-backToTopBtn.addEventListener('click', () => {
+// ── トップに戻る（画像を未選択状態に戻す）──
+function resetImageSelection() {
   imageBlob = null;
+  originalFileBlob = null;
   if (refObjectURL) { URL.revokeObjectURL(refObjectURL); refObjectURL = null; }
   previewImg.style.display = 'none';
   uploadPlaceholder.style.display = '';
   startBtn.disabled = true;
+  readjustBtn.style.display = 'none';
   fileInput.value = '';
   showScreen('start');
-});
+}
+backToTopBtn.addEventListener('click', resetImageSelection);
 
 // ── LINE友だち追加 ──
 document.getElementById('lineBtn').addEventListener('click', () => {
@@ -347,6 +614,19 @@ document.getElementById('lineBtn').addEventListener('click', () => {
 document.getElementById('completeLINEBtn').addEventListener('click', () => {
   window.open(LINE_FRIEND_URL, '_blank', 'noopener,noreferrer');
 });
+
+// ── ベストショット再調整 ──
+readjustBtn.addEventListener('click', () => {
+  cropReturnState = 'readjust';
+  showScreen('crop');
+  armBackTrap();
+  cropScreen.open(originalFileBlob);
+});
+
+// ── cropScreen ボタン ──
+cropConfirmBtn.addEventListener('click', () => cropScreen.confirm());
+cropBackBtn.addEventListener('click',    () => cropScreen.back());
+document.getElementById('cropWholeBtn').addEventListener('click', () => cropScreen.confirmWhole());
 
 boot();
 </script>

@@ -7,8 +7,8 @@
 
 import { saveState, clearState } from './storage.js';
 
-const PIECE_SNAP  = 0.38; // 隣接ピース間スナップ閾値（38%）
-const BOARD_SNAP  = 0.50; // 盤面スナップ閾値（50%）
+const PIECE_SNAP  = 0.35; // 隣接ピース間スナップ閾値（35%）— ピース同士は気持ちよくくっつく寄り
+const BOARD_SNAP  = 0.32; // 盤面スナップ閾値（32%）— 甘すぎると「自分ではめた感」が失われる
 const DELTAS = [[-1,0],[1,0],[0,-1],[0,1]];
 const SAVE_DEBOUNCE = 500;
 
@@ -33,10 +33,12 @@ export class Puzzle {
     this.timerInterval  = null;
     this.saveTimer      = null;
     this.completed      = false;
+    this._paused        = false;
+    this._completeFade  = 0;
+    this._destroyed     = false;
     this._resizeTimer   = null;
     this._resizeObserver = null;
     this._resizePending  = false;  // ドラッグ中に来たresizeをドロップ後に適用するためのフラグ
-    this._destroyed     = false;
     this.savedVW        = savedVW;
     this.savedVH        = savedVH;
 
@@ -60,7 +62,7 @@ export class Puzzle {
   _setupCanvas() {
     this._resize();
     // debounce(220ms) + double-rAF: Androidの回転直後はlayoutが安定しておらず、
-    // 途中の寸法を拾うとピース座標が縮んだままになるため、安定を待ってから読む
+    // 途中の寸法を拾うとピース座標が縮んだままになるため、安定を待ってから読む（crop.jsと同方式）
     this._resizeDebounced = () => {
       clearTimeout(this._resizeTimer);
       this._resizeTimer = setTimeout(() => {
@@ -107,7 +109,7 @@ export class Puzzle {
     this.vW = w;
     this.vH = h;
 
-    // 盤面は写真の縦横比を保って最大サイズで配置（画面の形に引き伸ばして写真が歪むのを防ぐ）
+    // 盤面は写真の縦横比を保って最大サイズで配置（引き伸ばし歪み防止）
     const imgAR = this.image.width / this.image.height;
     let bW = w * 0.97;
     let bH = bW / imgAR;
@@ -126,6 +128,7 @@ export class Puzzle {
           p.y = this._cy(p);
         } else {
           // ピースの寸法も変わるので、左上ではなく中心を比率で写す
+          // （左上基準だと縦長↔横長でピースが片側に寄り、下端のバーに隠れる）
           p.x = (p.x + oldPW / 2) * scaleX - this.pW / 2;
           p.y = (p.y + oldPH / 2) * scaleY - this.pH / 2;
         }
@@ -204,6 +207,7 @@ export class Puzzle {
   }
 
   _startDrag(x, y) {
+    if (this._paused) return false;
     const hit = this._hitTest(x, y);
     if (!hit) return false;
 
@@ -258,11 +262,11 @@ export class Puzzle {
 
   // ドラッググループが安全範囲から完全に外れないようにデルタを制限する
   // VIS: 最低限見えていなければならないピクセル数
-  // REF: 画面下部の「見本」ボタン確保領域（canvas座標）
+  // REF: 下部予約領域（バーはcanvas外になったため0）
   _clampGroupDelta(group, dx, dy) {
     const { pW, pH, vW, vH } = this;
     const VIS = 30;
-    const REF = 60;
+    const REF = 0;
     let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
     for (const p of group) {
       l = Math.min(l, p.x);   t = Math.min(t, p.y);
@@ -491,78 +495,22 @@ export class Puzzle {
     ctx.drawImage(this.image, this.gX, this.gY, pW * cols, pH * rows);
     ctx.restore();
 
-    // スナッププレビュー（ドラッグ中のみ）
-    if (this.dragSet) this._drawSnapPreview();
-
     // 描画順: 配置済み → 浮遊 → ドラッグ中（最前面）
     for (const p of this.pieces) if (p.placed)  this._drawPiece(p, false);
     for (const p of this.pieces) if (!p.placed && (!this.dragSet || !this.dragSet.has(p))) this._drawPiece(p, false);
     if (this.dragSet) for (const p of this.dragSet) this._drawPiece(p, true);
-  }
 
-  _drawSnapPreview() {
-    const group = [...this.dragSet];
-    const gids  = new Set(group.map(p => p.groupId));
-    const { pW, pH, ctx } = this;
-
-    // ── ピース同士スナッププレビュー ──
-    let bestSnap = null, bestErr = Infinity;
-    for (const PA of group) {
-      for (const [dc, dr] of DELTAS) {
-        const PB = this._find(PA.c + dc, PA.r + dr);
-        if (!PB || gids.has(PB.groupId)) continue;
-        const errX = Math.abs((PB.x - PA.x) - dc * pW);
-        const errY = Math.abs((PB.y - PA.y) - dr * pH);
-        // プレビューは閾値を1.6倍（少し手前から表示）
-        if (errX < pW * PIECE_SNAP * 1.6 && errY < pH * PIECE_SNAP * 1.6) {
-          const err = errX + errY;
-          if (err < bestErr) { bestErr = err; bestSnap = { PA, PB, dc, dr }; }
-        }
-      }
-    }
-
-    if (bestSnap) {
-      const { PA, PB, dc, dr } = bestSnap;
-      const moveX = (PB.x - dc * pW) - PA.x;
-      const moveY = (PB.y - dr * pH) - PA.y;
+    // 完成演出: 継ぎ目・枠線の上に完全な写真をフェードインさせる
+    if (this.completed && this._completeFade > 0) {
       ctx.save();
-      ctx.fillStyle   = 'rgba(100,210,255,0.18)';
-      ctx.strokeStyle = 'rgba(100,210,255,0.85)';
-      ctx.lineWidth   = 2;
-      for (const p of group) {
-        ctx.save();
-        ctx.translate(p.x + moveX, p.y + moveY);
-        const prev = this._getPiecePath(p);
-        ctx.fill(prev);
-        ctx.stroke(prev);
-        ctx.restore();
-      }
+      ctx.globalAlpha = this._completeFade;
+      ctx.drawImage(this.image, this.gX, this.gY, this.pW * this.cols, this.pH * this.rows);
       ctx.restore();
-      return;
-    }
-
-    // ── 盤面スナッププレビュー ──
-    for (const P of group) {
-      const cx = this._cx(P), cy = this._cy(P);
-      if (Math.abs(P.x - cx) < pW * BOARD_SNAP && Math.abs(P.y - cy) < pH * BOARD_SNAP) {
-        const moveX = cx - P.x, moveY = cy - P.y;
-        ctx.save();
-        ctx.fillStyle   = 'rgba(255,215,0,0.18)';
-        ctx.strokeStyle = '#FFD700';
-        ctx.lineWidth   = 2;
-        for (const p of group) {
-          ctx.save();
-          ctx.translate(p.x + moveX, p.y + moveY);
-          const prev = this._getPiecePath(p);
-          ctx.fill(prev);
-          ctx.stroke(prev);
-          ctx.restore();
-        }
-        ctx.restore();
-        return;
-      }
     }
   }
+
+  // 注: スナップ位置の光る予告表示(_drawSnapPreview)は「答えがわかってしまう」ため
+  // 削除した（吸着の挙動自体は _tryPieceSnap / _tryBoardSnap で健在）
 
   _drawPiece(p, isDragging) {
     const { ctx, image, pW, pH, cols, rows } = this;
@@ -608,8 +556,8 @@ export class Puzzle {
 
     const iW = image.width, iH = image.height;
     const cellW = iW / cols, cellH = iH / rows;
-    const EXTRA_X = Math.max(0.36, 0.32 * pH / pW);
-    const EXTRA_Y = Math.max(0.36, 0.32 * pW / pH);
+    const EXTRA_X = Math.max(0.40, 0.36 * pH / pW);
+    const EXTRA_Y = Math.max(0.40, 0.36 * pW / pH);
     const srcL = Math.max(0, (p.c - EXTRA_X) * cellW);
     const srcT = Math.max(0, (p.r - EXTRA_Y) * cellH);
     const srcR = Math.min(iW, (p.c + 1 + EXTRA_X) * cellW);
@@ -625,6 +573,19 @@ export class Puzzle {
       (srcR - srcL) * scX,
       (srcB - srcT) * scY
     );
+
+    // 内側ベベル: 左上光源を想定した立体感（clip内なのでピース外にはみ出さない）
+    // 白ストロークを右下へ、黒ストロークを左上へずらすと、
+    // 上・左辺の内側に光、下・右辺の内側に影が残る。
+    // 盤面に置いたピースは絵に馴染むようベベルなし（輪郭線のみ）
+    if (!p.placed) {
+      const bevelW = Math.max(1.5, Math.min(pW, pH) * 0.03);
+      ctx.lineWidth = bevelW;
+      ctx.strokeStyle = 'rgba(255,255,255,0.32)';
+      ctx.save(); ctx.translate(bevelW * 0.35, bevelW * 0.35); ctx.stroke(path); ctx.restore();
+      ctx.strokeStyle = 'rgba(0,0,0,0.34)';
+      ctx.save(); ctx.translate(-bevelW * 0.35, -bevelW * 0.35); ctx.stroke(path); ctx.restore();
+    }
 
     // ドラッグ中: 白トーンで明るさを演出（clip内なのでピース形状に自動クリップ）
     if (isDragging) {
@@ -757,6 +718,16 @@ export class Puzzle {
 
   _stopTimer() { clearInterval(this.timerInterval); }
 
+  // 一時停止 / 再開（設定メニュー・一時停止オーバーレイから使用）
+  pause()  { if (this._paused || this.completed) return; this._paused = true;  this._stopTimer(); }
+  resume() { if (!this._paused || this.completed) return; this._paused = false; this._startTimer(); }
+
+  // 即時保存（「中断して終了」用。debounce を待たずに書き込む）
+  async saveNow() {
+    clearTimeout(this.saveTimer);
+    await this._save();
+  }
+
   _scheduleSave() {
     clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => this._save(), SAVE_DEBOUNCE);
@@ -766,7 +737,8 @@ export class Puzzle {
     if (this.completed || !this._imageBlob) return;
     await saveState({
       imageBlob: this._imageBlob,
-      pieces:    this.pieces.map(p => ({ ...p })),
+      // Path2Dキャッシュ(_path等)はIndexedDBに保存不可（DataCloneError）のため除外する
+      pieces:    this.pieces.map(({ _path, _pathPW, _pathPH, ...rest }) => rest),
       cols:      this.cols,
       rows:      this.rows,
       elapsed:   this.elapsed,
@@ -783,7 +755,22 @@ export class Puzzle {
     this._stopTimer();
     this._detachEvents();
     clearState();
+    // 完成演出（継ぎ目フェードアウト）を開始し、アプリ側にはバー切替のみ通知。
+    // 画面遷移はユーザーが「終了する」を押すまで行わない（眺め放題）
+    this._animateComplete();
     if (this.onComplete) this.onComplete(this.elapsed);
+  }
+
+  // 完成演出: 900msかけて継ぎ目・枠線を消し、写真100%へ
+  _animateComplete() {
+    const t0 = performance.now(), DUR = 900;
+    const step = (now) => {
+      if (this._destroyed) return;
+      this._completeFade = Math.min(1, (now - t0) / DUR);
+      this._render();
+      if (this._completeFade < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
   }
 
   destroy() {
